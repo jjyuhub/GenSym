@@ -1,4 +1,4 @@
-name: Scala CI & Benchmarking
+name: Scala CI & Benchmarking (Solver Efficiency)
 
 on:
   push:
@@ -19,6 +19,7 @@ jobs:
     strategy:
       matrix:
         llvm-version: [11, 14]
+        solver: [Z3, STP]
 
     steps:
     - name: Checkout repository and submodules
@@ -63,6 +64,7 @@ jobs:
         cd ../../klee-posix-fs && make
 
     - name: Install Z3
+      if: matrix.solver == 'Z3'
       run: |
         cd third-party
         wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.14/z3-4.8.14-x64-glibc-2.31.zip
@@ -73,6 +75,7 @@ jobs:
         sudo ldconfig
 
     - name: Install STP
+      if: matrix.solver == 'STP'
       run: |
         cd third-party/stp
         mkdir -p build
@@ -90,29 +93,28 @@ jobs:
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
 
-    - name: Run tests & Capture Performance Data
+    - name: Run tests & Capture Performance Data for ${{ matrix.solver }}
       run: |
-        echo "Running performance tests..."
-        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS' 2>&1 | tee benchmark_results.log
-        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_Z3' 2>&1 | tee -a benchmark_results.log
-        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results.log
+        echo "Running performance tests with ${{ matrix.solver }}..."
+        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee benchmark_results_${{ matrix.solver }}.log
+        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
 
-    - name: Analyze & Print Performance Data
+    - name: Analyze & Print Performance Data for ${{ matrix.solver }}
       run: |
-        echo "======================== Performance Summary ========================"
-        grep "User time" benchmark_results.log || echo "No User time found"
-        grep "Elapsed (wall clock) time" benchmark_results.log || echo "No Wall time found"
-        grep "Maximum resident set size" benchmark_results.log || echo "No Memory usage found"
-        grep "solver queries" benchmark_results.log || echo "No Solver queries found"
-        echo "====================================================================="
+        echo "======================== Performance Summary (${{ matrix.solver }}) ========================"
+        grep "User time" benchmark_results_${{ matrix.solver }}.log || echo "No User time found"
+        grep "Elapsed (wall clock) time" benchmark_results_${{ matrix.solver }}.log || echo "No Wall time found"
+        grep "Maximum resident set size" benchmark_results_${{ matrix.solver }}.log || echo "No Memory usage found"
+        grep "solver queries" benchmark_results_${{ matrix.solver }}.log || echo "No Solver queries found"
+        echo "=========================================================================================="
 
-    - name: Upload Benchmark Results
+    - name: Upload Benchmark Results for ${{ matrix.solver }}
       uses: actions/upload-artifact@v4
       with:
-        name: benchmark-results
-        path: benchmark_results.log
+        name: benchmark-results-${{ matrix.solver }}
+        path: benchmark_results_${{ matrix.solver }}.log
 
     - name: Cleanup
       run: |
