@@ -24,6 +24,19 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Set up LLVM and Clang
+      run: |
+        sudo apt-get update && sudo apt-get install -y curl gnupg2
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main"
+        sudo apt-get update
+        sudo apt-get install -y clang-${{ matrix.llvm-version }} llvm-${{ matrix.llvm-version }}
+
+    - name: Verify Clang/LLVM Installation
+      run: |
+        clang-${{ matrix.llvm-version }} --version
+        llvm-config-${{ matrix.llvm-version }} --version
+
     - name: Set up JDK 11 (Temurin)
       uses: actions/setup-java@v3
       with:
@@ -35,8 +48,7 @@ jobs:
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           git g++ cmake bison flex libboost-all-dev python3 \
-          perl minisat curl gnupg2 locales wget
-        sudo apt-get install -y clang-${{ matrix.llvm-version }}
+          perl minisat curl wget locales
 
     - name: Generate test files (LLVM IR)
       run: |
