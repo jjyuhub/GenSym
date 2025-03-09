@@ -9,7 +9,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # Force Ubuntu 20.04 to fix LLVM dependency issues
     defaults:
       run:
         working-directory: ./
@@ -26,9 +26,9 @@ jobs:
 
     - name: Set up LLVM and Clang
       run: |
-        sudo apt-get update && sudo apt-get install -y curl gnupg2
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main"
+        sudo apt-get update && sudo apt-get install -y curl gnupg2 software-properties-common
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /usr/share/keyrings/llvm-keyring.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/llvm-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main" | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
         sudo apt-get install -y clang-${{ matrix.llvm-version }} llvm-${{ matrix.llvm-version }}
 
