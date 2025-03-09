@@ -1,4 +1,4 @@
-name: Scala CI & Benchmarking (Fixed Artifacts & STP Verification)
+name: Scala CI & Benchmarking (Fixed Unique Artifact Naming)
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
 
     - name: Set up LLVM and Clang
       run: |
-        set -e  # CRASH ON ERROR
+        set -e
         sudo apt-get update && sudo apt-get install -y curl gnupg2 software-properties-common
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/llvm-keyring.gpg > /dev/null
         echo "deb [signed-by=/usr/share/keyrings/llvm-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -120,17 +120,19 @@ jobs:
       run: |
         set -e
         TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-        UNIQUE_NAME="benchmark-results-llvm-${{ matrix.llvm-version }}-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}-${TIMESTAMP}"
-        echo "Running performance tests with ${{ matrix.solver }}..."
-        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee ${UNIQUE_NAME}.log
-        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a ${UNIQUE_NAME}.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a ${UNIQUE_NAME}.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a ${UNIQUE_NAME}.log
+        echo "Running performance tests with ${{ matrix.solver }} (LLVM ${{ matrix.llvm-version }})..."
+        LOG_FILE="benchmark-results-llvm-${{ matrix.llvm-version }}-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}-${TIMESTAMP}.log"
+        echo "Saving results to $LOG_FILE"
+        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee $LOG_FILE
+        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a $LOG_FILE
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a $LOG_FILE
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a $LOG_FILE
+        echo "Benchmarking completed."
 
     - name: Upload Benchmark Results for ${{ matrix.solver }}
       uses: actions/upload-artifact@v4
       with:
-        name: "${{ UNIQUE_NAME }}"
+        name: "benchmark-results-llvm-${{ matrix.llvm-version }}-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}"
         path: "*.log"
 
     - name: Cleanup
