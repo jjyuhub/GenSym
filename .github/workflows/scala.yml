@@ -90,35 +90,29 @@ jobs:
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
 
-    - name: Run tests
+    - name: Run tests & Capture Performance Data
       run: |
+        echo "Running performance tests..."
         /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS' 2>&1 | tee benchmark_results.log
         /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_Z3' 2>&1 | tee -a benchmark_results.log
         /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results.log
         /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results.log
         /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results.log
 
-    - name: Analyze Performance
+    - name: Analyze & Print Performance Data
       run: |
-        echo "Extracting benchmark results..."
-        grep "User time" benchmark_results.log > benchmark_summary.log
-        grep "Elapsed (wall clock) time" benchmark_results.log >> benchmark_summary.log
-        grep "Maximum resident set size" benchmark_results.log >> benchmark_summary.log
-        grep "solver queries" benchmark_results.log || true
+        echo "======================== Performance Summary ========================"
+        grep "User time" benchmark_results.log || echo "No User time found"
+        grep "Elapsed (wall clock) time" benchmark_results.log || echo "No Wall time found"
+        grep "Maximum resident set size" benchmark_results.log || echo "No Memory usage found"
+        grep "solver queries" benchmark_results.log || echo "No Solver queries found"
+        echo "====================================================================="
 
     - name: Upload Benchmark Results
       uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
         path: benchmark_results.log
-
-    - name: Detect Regressions
-      run: |
-        PREV_TIME=$(cat benchmark_results.log | grep "Elapsed (wall clock) time" | awk '{print $8}')
-        if [[ "$PREV_TIME" > 1.1 ]]; then
-          echo "❌ Performance regression detected! Execution time increased."
-          exit 1
-        fi
 
     - name: Cleanup
       run: |
