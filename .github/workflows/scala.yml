@@ -1,15 +1,17 @@
-name: Scala CI
+name: Scala CI & Benchmarking
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 1'  # Run benchmarking every Monday
 
 jobs:
   build:
 
-    runs-on: ubuntu-20.04  # Ensuring Ubuntu 20.04 for compatibility
+    runs-on: ubuntu-20.04
     defaults:
       run:
         working-directory: ./
@@ -90,11 +92,33 @@ jobs:
 
     - name: Run tests
       run: |
-        sbt 'testOnly gensym.TestImpCPSGS'
-        sbt 'testOnly gensym.TestImpCPSGS_Z3'
-        sbt 'testOnly gensym.TestLibrary'
-        sbt 'testOnly gensym.wasm.TestEval'
-        sbt 'testOnly gensym.wasm.TestScriptRun'
+        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS' 2>&1 | tee benchmark_results.log
+        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_Z3' 2>&1 | tee -a benchmark_results.log
+        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results.log
+
+    - name: Analyze Performance
+      run: |
+        echo "Extracting benchmark results..."
+        grep "User time" benchmark_results.log > benchmark_summary.log
+        grep "Elapsed (wall clock) time" benchmark_results.log >> benchmark_summary.log
+        grep "Maximum resident set size" benchmark_results.log >> benchmark_summary.log
+        grep "solver queries" benchmark_results.log || true
+
+    - name: Upload Benchmark Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark_results.log
+
+    - name: Detect Regressions
+      run: |
+        PREV_TIME=$(cat benchmark_results.log | grep "Elapsed (wall clock) time" | awk '{print $8}')
+        if [[ "$PREV_TIME" > 1.1 ]]; then
+          echo "❌ Performance regression detected! Execution time increased."
+          exit 1
+        fi
 
     - name: Cleanup
       run: |
