@@ -107,7 +107,7 @@ jobs:
         grep "solver queries" benchmark_results.log || true
 
     - name: Upload Benchmark Results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
         path: benchmark_results.log
