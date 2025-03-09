@@ -1,4 +1,4 @@
-name: Scala CI & Benchmarking (Solver Efficiency)
+name: Scala CI & Benchmarking (Crash on Errors)
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
 
     - name: Set up LLVM and Clang
       run: |
+        set -e  # CRASH ON ERROR
         sudo apt-get update && sudo apt-get install -y curl gnupg2 software-properties-common
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/llvm-keyring.gpg > /dev/null
         echo "deb [signed-by=/usr/share/keyrings/llvm-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -37,6 +38,7 @@ jobs:
 
     - name: Verify Clang/LLVM Installation
       run: |
+        set -e  # CRASH ON ERROR
         clang-${{ matrix.llvm-version }} --version
         llvm-config-${{ matrix.llvm-version }} --version
 
@@ -48,6 +50,7 @@ jobs:
 
     - name: Set up dependencies
       run: |
+        set -e  # CRASH ON ERROR
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           git g++ cmake bison flex libboost-all-dev python3 \
@@ -55,6 +58,7 @@ jobs:
 
     - name: Generate test files (LLVM IR)
       run: |
+        set -e  # CRASH ON ERROR
         cd benchmarks/llvm && make gensym
         cd ../demo-benchmarks && make gensym
         cd ../external-lib && make gensym
@@ -66,6 +70,7 @@ jobs:
     - name: Install Z3
       if: matrix.solver == 'Z3'
       run: |
+        set -e  # CRASH ON ERROR
         cd third-party
         wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.14/z3-4.8.14-x64-glibc-2.31.zip
         unzip z3-4.8.14-x64-glibc-2.31.zip
@@ -77,6 +82,7 @@ jobs:
     - name: Install STP
       if: matrix.solver == 'STP'
       run: |
+        set -e  # CRASH ON ERROR
         cd third-party/stp
         mkdir -p build
         cd build
@@ -87,6 +93,7 @@ jobs:
 
     - name: Install wasmfx-tools
       run: |
+        set -e  # CRASH ON ERROR
         cd third-party/wasmfx-tools
         cargo build --release
 
@@ -95,26 +102,28 @@ jobs:
 
     - name: Run tests & Capture Performance Data for ${{ matrix.solver }}
       run: |
+        set -e  # CRASH ON ERROR
+        TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
         echo "Running performance tests with ${{ matrix.solver }}..."
-        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee benchmark_results_${{ matrix.solver }}.log
-        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}.log
+        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee benchmark_results_${{ matrix.solver }}_$TIMESTAMP.log
+        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}_$TIMESTAMP.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}_$TIMESTAMP.log
+        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a benchmark_results_${{ matrix.solver }}_$TIMESTAMP.log
 
     - name: Analyze & Print Performance Data for ${{ matrix.solver }}
       run: |
         echo "======================== Performance Summary (${{ matrix.solver }}) ========================"
-        grep "User time" benchmark_results_${{ matrix.solver }}.log || echo "No User time found"
-        grep "Elapsed (wall clock) time" benchmark_results_${{ matrix.solver }}.log || echo "No Wall time found"
-        grep "Maximum resident set size" benchmark_results_${{ matrix.solver }}.log || echo "No Memory usage found"
-        grep "solver queries" benchmark_results_${{ matrix.solver }}.log || echo "No Solver queries found"
+        grep "User time" benchmark_results_${{ matrix.solver }}_*.log || echo "No User time found"
+        grep "Elapsed (wall clock) time" benchmark_results_${{ matrix.solver }}_*.log || echo "No Wall time found"
+        grep "Maximum resident set size" benchmark_results_${{ matrix.solver }}_*.log || echo "No Memory usage found"
+        grep "solver queries" benchmark_results_${{ matrix.solver }}_*.log || echo "No Solver queries found"
         echo "=========================================================================================="
 
     - name: Upload Benchmark Results for ${{ matrix.solver }}
       uses: actions/upload-artifact@v4
       with:
-        name: benchmark-results-${{ matrix.solver }}
-        path: benchmark_results_${{ matrix.solver }}.log
+        name: benchmark-results-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: benchmark_results_${{ matrix.solver }}_*.log
 
     - name: Cleanup
       run: |
