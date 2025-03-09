@@ -1,17 +1,15 @@
-name: Scala CI & Benchmarking (Fixed STP & Unique Artifacts)
+name: Scala CI
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: '0 0 * * 1'  # Run benchmarking every Monday
 
 jobs:
   build:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04  # Ensuring Ubuntu 20.04 for compatibility
     defaults:
       run:
         working-directory: ./
@@ -19,7 +17,6 @@ jobs:
     strategy:
       matrix:
         llvm-version: [11, 14]
-        solver: [Z3, STP]
 
     steps:
     - name: Checkout repository and submodules
@@ -29,7 +26,6 @@ jobs:
 
     - name: Set up LLVM and Clang
       run: |
-        set -e
         sudo apt-get update && sudo apt-get install -y curl gnupg2 software-properties-common
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/llvm-keyring.gpg > /dev/null
         echo "deb [signed-by=/usr/share/keyrings/llvm-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -38,7 +34,6 @@ jobs:
 
     - name: Verify Clang/LLVM Installation
       run: |
-        set -e
         clang-${{ matrix.llvm-version }} --version
         llvm-config-${{ matrix.llvm-version }} --version
 
@@ -50,7 +45,6 @@ jobs:
 
     - name: Set up dependencies
       run: |
-        set -e
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           git g++ cmake bison flex libboost-all-dev python3 \
@@ -58,7 +52,6 @@ jobs:
 
     - name: Generate test files (LLVM IR)
       run: |
-        set -e
         cd benchmarks/llvm && make gensym
         cd ../demo-benchmarks && make gensym
         cd ../external-lib && make gensym
@@ -68,9 +61,7 @@ jobs:
         cd ../../klee-posix-fs && make
 
     - name: Install Z3
-      if: matrix.solver == 'Z3'
       run: |
-        set -e
         cd third-party
         wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.14/z3-4.8.14-x64-glibc-2.31.zip
         unzip z3-4.8.14-x64-glibc-2.31.zip
@@ -79,70 +70,31 @@ jobs:
         sudo cp bin/libz3.so /usr/lib/x86_64-linux-gnu/
         sudo ldconfig
 
-    - name: Step-by-Step STP Installation & Verification
-      if: matrix.solver == 'STP'
+    - name: Install STP
       run: |
-        set -e
         cd third-party/stp
         mkdir -p build
         cd build
-        
-        echo "Running CMake for STP..."
-        cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=ON || { echo "❌ CMake failed!"; exit 1; }
-
-        echo "Building STP..."
-        make -j$(nproc) || { echo "❌ STP build failed!"; exit 1; }
-
-        echo "Installing STP..."
-        sudo make install || { echo "❌ STP install failed!"; exit 1; }
+        cmake ..
+        make -j$(nproc)
+        sudo make install
         sudo ldconfig
-
-        echo "Verifying STP installation..."
-        
-        if [ ! -f /usr/local/lib/libstp.so ]; then
-          echo "❌ STP shared library missing! Compilation will fail."
-          exit 1
-        fi
-
-        if [ ! -f /usr/local/lib/libstp.a ]; then
-          echo "❌ STP static library missing! Compilation will fail."
-          exit 1
-        fi
-
-        if [ ! -f /usr/local/include/stp/c_interface.h ]; then
-          echo "❌ STP header file missing! Compilation will fail."
-          exit 1
-        fi
-
-        echo "✅ STP installed successfully with both static and shared libraries."
 
     - name: Install wasmfx-tools
       run: |
-        set -e
         cd third-party/wasmfx-tools
         cargo build --release
 
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
 
-    - name: Run tests & Capture Performance Data for ${{ matrix.solver }}
+    - name: Run tests
       run: |
-        set -e
-        TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-        LOG_FILE="benchmark-results-llvm-${{ matrix.llvm-version }}-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}-${TIMESTAMP}.log"
-        echo "Running performance tests with ${{ matrix.solver }} (LLVM ${{ matrix.llvm-version }})..."
-        echo "Saving results to $LOG_FILE"
-        /usr/bin/time -v sbt 'testOnly gensym.TestImpCPSGS_${{ matrix.solver }}' 2>&1 | tee $LOG_FILE
-        /usr/bin/time -v sbt 'testOnly gensym.TestLibrary' 2>&1 | tee -a $LOG_FILE
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestEval' 2>&1 | tee -a $LOG_FILE
-        /usr/bin/time -v sbt 'testOnly gensym.wasm.TestScriptRun' 2>&1 | tee -a $LOG_FILE
-        echo "Benchmarking completed."
-
-    - name: Upload Benchmark Results for ${{ matrix.solver }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: "benchmark-results-llvm-${{ matrix.llvm-version }}-${{ matrix.solver }}-${{ github.run_id }}-${{ github.run_attempt }}"
-        path: "*.log"
+        sbt 'testOnly gensym.TestImpCPSGS'
+        sbt 'testOnly gensym.TestImpCPSGS_Z3'
+        sbt 'testOnly gensym.TestLibrary'
+        sbt 'testOnly gensym.wasm.TestEval'
+        sbt 'testOnly gensym.wasm.TestScriptRun'
 
     - name: Cleanup
       run: |
