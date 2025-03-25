@@ -170,11 +170,7 @@ jobs:
         cd ../oopsla20 && make generate_sse
         cd ../test-comp/array-examples && make gensym
         cd ../../test-comp/array-programs && make gensym
-        cd ../../klee-posix-fs && make
-
-    - name: Compile native C++ code
-      run: |
-        make -j$(nproc)
+        cd ../../klee-posix-fs && make -j$(nproc)
 
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
