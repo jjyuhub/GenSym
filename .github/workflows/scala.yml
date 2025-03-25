@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 0 * * 1'  # Weekly benchmarking
+    - cron: '0 0 * * 1'
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
         working-directory: ./
     strategy:
       matrix:
-        llvm-version: [14]
+        llvm-version: [11, 14]
 
     steps:
     - name: Checkout repository and submodules
@@ -147,6 +147,16 @@ jobs:
         sudo cp bin/libz3.so /usr/lib/x86_64-linux-gnu/
         sudo ldconfig
 
+    - name: Generate test files (LLVM IR)
+      run: |
+        cd benchmarks/llvm && make gensym
+        cd ../demo-benchmarks && make gensym
+        cd ../external-lib && make gensym
+        cd ../oopsla20 && make generate_sse
+        cd ../test-comp/array-examples && make gensym
+        cd ../../test-comp/array-programs && make gensym
+        cd ../../klee-posix-fs && make
+
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
 
@@ -182,4 +192,3 @@ jobs:
         path: |
           benchmark_single.log
           benchmark_multi.log
-
