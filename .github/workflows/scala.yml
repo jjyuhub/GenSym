@@ -147,6 +147,21 @@ jobs:
         sudo cp bin/libz3.so /usr/lib/x86_64-linux-gnu/
         sudo ldconfig
 
+    - name: Install STP
+      run: |
+        cd third-party/stp
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=ON
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+        echo "✅ STP installed."
+        if [ ! -f /usr/local/include/stp/c_interface.h ]; then
+          echo "❌ STP header file is missing!"
+          exit 1
+        fi
+
     - name: Generate test files (LLVM IR)
       run: |
         cd benchmarks/llvm && make gensym
@@ -156,6 +171,10 @@ jobs:
         cd ../test-comp/array-examples && make gensym
         cd ../../test-comp/array-programs && make gensym
         cd ../../klee-posix-fs && make
+
+    - name: Compile native C++ code
+      run: |
+        make -j$(nproc)
 
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
@@ -192,3 +211,4 @@ jobs:
         path: |
           benchmark_single.log
           benchmark_multi.log
+
