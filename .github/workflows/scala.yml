@@ -1,22 +1,22 @@
-name: Scala CI
+name: Scala CI & Benchmarking
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly benchmarking
 
 jobs:
   build:
-
-    runs-on: ubuntu-20.04  # Ensuring Ubuntu 20.04 for compatibility
+    runs-on: ubuntu-20.04
     defaults:
       run:
         working-directory: ./
-
     strategy:
       matrix:
-        llvm-version: [11, 14]
+        llvm-version: [14]
 
     steps:
     - name: Checkout repository and submodules
@@ -88,7 +88,7 @@ jobs:
     - name: Generate models
       run: sbt 'runMain gensym.GenerateExternal'
 
-    - name: Run tests
+    - name: Run all unit tests
       run: |
         sbt 'testOnly gensym.TestImpCPSGS'
         sbt 'testOnly gensym.TestImpCPSGS_Z3'
@@ -99,3 +99,86 @@ jobs:
     - name: Cleanup
       run: |
         sudo rm -rf ~/.sbt ~/.ivy2 ~/.cache
+
+  benchmark:
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        working-directory: ./
+
+    strategy:
+      matrix:
+        llvm-version: [14]
+
+    steps:
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Set up LLVM and Clang
+      run: |
+        sudo apt-get update && sudo apt-get install -y curl gnupg2 software-properties-common
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/llvm-keyring.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/llvm-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-${{ matrix.llvm-version }} main" | sudo tee /etc/apt/sources.list.d/llvm.list
+        sudo apt-get update
+        sudo apt-get install -y clang-${{ matrix.llvm-version }} llvm-${{ matrix.llvm-version }}
+
+    - name: Set up JDK 11 (Temurin)
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+
+    - name: Set up dependencies
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          git g++ cmake bison flex libboost-all-dev python3 \
+          perl minisat curl wget locales
+
+    - name: Install Z3
+      run: |
+        cd third-party
+        wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.14/z3-4.8.14-x64-glibc-2.31.zip
+        unzip z3-4.8.14-x64-glibc-2.31.zip
+        cd z3-4.8.14-x64-glibc-2.31
+        sudo cp include/* /usr/include/
+        sudo cp bin/libz3.so /usr/lib/x86_64-linux-gnu/
+        sudo ldconfig
+
+    - name: Generate models
+      run: sbt 'runMain gensym.GenerateExternal'
+
+    - name: Benchmark single-threaded
+      run: |
+        echo "Benchmarking GenSym with 1 thread..."
+        /usr/bin/time -v sbt 'runMain gensym.TestImpCPSGS --threads=1' 2>&1 | tee benchmark_single.log
+
+    - name: Benchmark multi-threaded
+      run: |
+        echo "Benchmarking GenSym with 8 threads..."
+        /usr/bin/time -v sbt 'runMain gensym.TestImpCPSGS --threads=8' 2>&1 | tee benchmark_multi.log
+
+    - name: Analyze speedup
+      run: |
+        echo "=== GenSym Speedup Summary ==="
+        STIME=$(grep "Elapsed (wall clock) time" benchmark_single.log | awk '{print $8}' | cut -d: -f2)
+        MTIME=$(grep "Elapsed (wall clock) time" benchmark_multi.log | awk '{print $8}' | cut -d: -f2)
+        echo "Single-threaded time: $STIME seconds"
+        echo "Multi-threaded time:  $MTIME seconds"
+        if [ -n "$STIME" ] && [ -n "$MTIME" ]; then
+          SPEEDUP=$(awk "BEGIN {print $STIME / $MTIME}")
+          echo "Estimated speedup: ${SPEEDUP}×"
+        else
+          echo "Could not compute speedup: timing data missing."
+        fi
+        echo "================================"
+
+    - name: Upload benchmark logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: gensym-benchmark-logs
+        path: |
+          benchmark_single.log
+          benchmark_multi.log
