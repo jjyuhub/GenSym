@@ -153,12 +153,12 @@ jobs:
     - name: Benchmark single-threaded
       run: |
         echo "Benchmarking GenSym with 1 thread..."
-        /usr/bin/time -v sbt 'runMain gensym.TestImpCPSGS --threads=1' 2>&1 | tee benchmark_single.log
+        /usr/bin/time -v sbt -Dgensym.threads=1 'testOnly gensym.TestImpCPSGS' 2>&1 | tee benchmark_single.log
 
     - name: Benchmark multi-threaded
       run: |
         echo "Benchmarking GenSym with 8 threads..."
-        /usr/bin/time -v sbt 'runMain gensym.TestImpCPSGS --threads=8' 2>&1 | tee benchmark_multi.log
+        /usr/bin/time -v sbt -Dgensym.threads=8 'testOnly gensym.TestImpCPSGS' 2>&1 | tee benchmark_multi.log
 
     - name: Analyze speedup
       run: |
@@ -182,3 +182,4 @@ jobs:
         path: |
           benchmark_single.log
           benchmark_multi.log
+
